@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "llm/config.h"
+#include "llm/telemetry.h"
 
 namespace llm {
 
@@ -29,14 +30,19 @@ double Strategy::dynamic_threshold(const BrokerQuote& q) const {
 Decision Strategy::evaluate(double lead, const BrokerQuote& q, int64_t /*now_ms*/,
                             double& out_threshold) {
     out_threshold = dynamic_threshold(q);
-    if (q.spread <= 0.0) out_threshold += std::fabs(q.ask - q.bid);
 
     lead = round4(lead);
     const double bid = round4(q.bid);
     const double ask = round4(q.ask);
 
-    if (lead > ask + out_threshold) return Decision::Long;
-    if (bid > lead + out_threshold) return Decision::Short;
+    if (lead > ask + out_threshold) {
+        Telemetry::instance().bench_mark(kStageStrategy);
+        return Decision::Long;
+    }
+    if (bid > lead + out_threshold) {
+        Telemetry::instance().bench_mark(kStageStrategy);
+        return Decision::Short;
+    }
     return Decision::Hold;
 }
 

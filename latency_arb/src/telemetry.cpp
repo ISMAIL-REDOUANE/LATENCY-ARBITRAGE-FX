@@ -1,5 +1,6 @@
 #include "llm/telemetry.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -8,6 +9,7 @@
 
 #ifdef _WIN32
 #include <io.h>
+#include <windows.h>
 #else
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -152,6 +154,138 @@ void Telemetry::grow_mmap(int mb) {
 #else
     (void)mb;
 #endif
+}
+
+// ---------------------------------------------------------------------------
+// Nanosecond benchmark module: lock-free, zero-allocation latency ring.
+// ---------------------------------------------------------------------------
+
+double Telemetry::calibrate_tsc_hz() noexcept {
+    // Measure rdtsc frequency using steady_ns over a 50ms window.
+    const uint64_t t0 = rdtsc();
+    const int64_t  n0 = steady_ns();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    const uint64_t t1 = rdtsc();
+    const int64_t  n1 = steady_ns();
+    const int64_t  dn = n1 - n0;
+    if (dn <= 0) return 0.0;
+    return static_cast<double>(t1 - t0) * 1e9 / static_cast<double>(dn);
+}
+
+bool Telemetry::alloc_bench_ring(std::size_t bytes) {
+    if (ring_base_) return true;
+    if (bytes == 0) bytes = kDefaultRingBytes;
+    // Round down to the largest power of two <= bytes so indexing is a mask.
+    std::size_t cap = 1;
+    while ((cap << 1) <= bytes) cap <<= 1;
+    const std::size_t byte_len = cap * sizeof(LatencySample);
+
+    LatencySample* p = nullptr;
+#ifdef _WIN32
+    p = static_cast<LatencySample*>(VirtualAlloc(
+        nullptr, byte_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+    if (!p) return false;
+#else
+    void* m = ::mmap(nullptr, byte_len, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (m == MAP_FAILED) return false;
+    p = static_cast<LatencySample*>(m);
+#endif
+
+    ring_base_ = p;
+    ring_mask_ = cap - 1;
+    ring_head_.store(0);
+    ring_pub_.store(0);
+    ring_seq_.store(0);
+    ring_tsc_hz_.store(calibrate_tsc_hz());
+    return true;
+}
+
+bool Telemetry::enable_benchmark_ring(std::size_t bytes) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    return alloc_bench_ring(bytes);
+}
+
+void Telemetry::bench_mark(uint32_t stage) noexcept {
+    LatencySample* base = ring_base_;
+    if (!base) return;
+
+    const std::size_t idx = ring_head_.fetch_add(1, std::memory_order_relaxed) & ring_mask_;
+    const int64_t now_ns = steady_ns();
+    const uint64_t tsc   = rdtsc();
+    const uint64_t seq   = ring_seq_.fetch_add(1, std::memory_order_relaxed);
+
+    LatencySample& s = base[idx];
+    s.ts_ns = now_ns;
+    s.tsc   = tsc;
+    s.stage = stage;
+    s.seq   = static_cast<uint32_t>(seq);
+    // Publish: ensure the sample fields above are visible before valid.
+    s.valid.store(1, std::memory_order_release);
+    ring_pub_.fetch_add(1, std::memory_order_relaxed);
+}
+
+Telemetry::BenchStats Telemetry::bench_stats(std::size_t window) const noexcept {
+    BenchStats st{};
+    const LatencySample* base = ring_base_;
+    if (!base) return st;
+
+    const std::size_t pub = ring_pub_.load(std::memory_order_acquire);
+    st.samples = pub;
+    st.tsc_hz  = ring_tsc_hz_.load();
+    if (pub == 0) return st;
+
+    // Collect the most recent deltas into a fixed stack window. This is NOT on
+    // the hot path, but keeps the whole benchmark module heap-allocation-free.
+    static constexpr std::size_t kMaxWindow = 4096;
+    const std::size_t count = std::min({pub, window, kMaxWindow});
+    double dt[kMaxWindow];
+    std::size_t n = 0;
+
+    double sum = 0.0, mn = 1e18, mx = -1e18;
+    int64_t prev_ts = 0;
+    uint64_t first_seq = 0, last_seq = 0;
+
+    // Walk newest -> oldest, tracking inter-sample deltas.
+    // `pub` samples were written sequentially; slot i holds the (i+1)-th
+    // publish. Read newest first so we naturally stop at the window.
+    for (std::size_t k = 0; k < count; ++k) {
+        const std::size_t slot = (pub - 1 - k) & ring_mask_;
+        const LatencySample& s = base[slot];
+        if (!s.valid.load(std::memory_order_acquire)) continue;
+        if (prev_ts == 0) {
+            prev_ts = s.ts_ns;
+            last_seq = s.seq;
+            first_seq = s.seq;
+            continue;
+        }
+        const int64_t delta = prev_ts - s.ts_ns;
+        if (delta >= 0) {
+            const double d = static_cast<double>(delta);
+            dt[n++] = d;
+            sum += d;
+            if (d < mn) mn = d;
+            if (d > mx) mx = d;
+        }
+        prev_ts = s.ts_ns;
+        first_seq = s.seq;
+    }
+
+    st.first_seq = first_seq;
+    st.last_seq  = last_seq;
+    if (n == 0) {
+        st.samples = 0;
+        return st;
+    }
+
+    st.min_dt_ns = mn;
+    st.max_dt_ns = mx;
+    st.avg_dt_ns = sum / static_cast<double>(n);
+    std::sort(dt, dt + n);
+    st.p50_dt_ns = dt[n / 2];
+    st.p99_dt_ns = dt[static_cast<std::size_t>(0.99 * static_cast<double>(n - 1))];
+    st.samples   = n;
+    return st;
 }
 
 }  // namespace llm

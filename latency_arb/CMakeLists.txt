@@ -9,8 +9,11 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# ---------------------------------------------------------------------------
+# Production flags (generated binaries only — the test suite intentionally does
+# NOT get -ffast-math so its rounding/edge assertions are FP-correct).
+# ---------------------------------------------------------------------------
 if(CMAKE_BUILD_TYPE MATCHES "Release|RelWithDebInfo")
-  add_compile_options(-O3 -march=native -DNDEBUG -flto)
   add_link_options(-flto)
 endif()
 add_compile_options(-Wall -Wextra -pedantic)
@@ -44,6 +47,7 @@ add_library(llm_core
   src/aggregator.cpp
   src/strategy.cpp
   src/telemetry.cpp
+  src/wire.cpp
 )
 target_include_directories(llm_core PUBLIC include ${ZMQ_INCLUDE_DIR})
 target_include_directories(llm_core PUBLIC ${NLOHMANN_JSON_INCLUDE_DIR})
@@ -55,6 +59,14 @@ target_link_libraries(llm_core PUBLIC
 )
 if(OpenSSL_FOUND)
   target_link_libraries(llm_core PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+endif()
+
+# Production binaries get the full tuning set; the test target below does not
+# (keeps floating-point behavior deterministic for its assertions).
+if(CMAKE_BUILD_TYPE MATCHES "Release|RelWithDebInfo")
+  target_compile_options(llm_core PUBLIC
+    -O3 -march=native -DNDEBUG -flto -funroll-loops -ffast-math
+  )
 endif()
 
 add_executable(lead_lag
@@ -77,10 +89,26 @@ if(WIN32)
   target_link_libraries(mt5_bridge PRIVATE ws2_32)
 endif()
 
+# ---------------------------------------------------------------------------
+# Unit + benchmark suite — dependency-free (pure config/strategy/aggregator/
+# telemetry/wire; NO libzmq/Boost/OpenSSL), so `ctest` passes even on a fresh
+# box that has not installed the runtime deps.
+# ---------------------------------------------------------------------------
+enable_testing()
+add_executable(latency_tests
+  tests/test_main.cpp
+  src/config.cpp
+  src/strategy.cpp
+  src/aggregator.cpp
+  src/telemetry.cpp
+  src/wire.cpp
+)
+target_include_directories(latency_tests PRIVATE include)
+# alloc-counter operator new/delete override pairs malloc/free correctly, but
+# GCC's -Wmismatched-new-delete is a false positive on that idiom.
+target_compile_options(latency_tests PRIVATE -O2 -g -Wno-mismatched-new-delete)
+target_link_libraries(latency_tests PRIVATE Threads::Threads)
+add_test(NAME latency_tests COMMAND latency_tests)
+
 include(GNUInstallDirs)
 install(TARGETS lead_lag mt5_bridge RUNTIME DESTINATION bin)
-
-enable_testing()
-add_executable(llm_ring_test tests/ring_test.cpp)
-target_link_libraries(llm_ring_test PRIVATE llm_core)
-add_test(NAME llm_ring_test COMMAND llm_ring_test)

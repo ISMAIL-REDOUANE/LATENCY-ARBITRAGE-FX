@@ -121,6 +121,9 @@ int main() {
     // Pre-allocate the big mmap region (10MB) just before engine threads spin.
     Telemetry::instance().preallocate_mmap(cfg.mmap_prealloc_big_mb);
 
+    // Pre-allocate the lock-free nanosecond benchmark ring (Tick->Trade path).
+    Telemetry::instance().enable_benchmark_ring();
+
     std::signal(SIGINT, on_signal);
     std::signal(SIGTERM, on_signal);
 

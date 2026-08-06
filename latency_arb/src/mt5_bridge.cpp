@@ -8,6 +8,8 @@
 
 #include <zmq.h>
 
+#include "llm/wire.h"
+
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -34,62 +36,13 @@ namespace llm {
 // Wire parser — pure, allocation-free.
 // Engine frame (see src/execution.cpp):
 //   signal|BUY|SELL,reason,lead,bid,ask,threshold,edge,ts_ms
+//
+// The canonical parser lives in llm/wire.h (shared with the unit tests);
+// parse_signal is a thin delegate so the ZMQ subscriber loop and the test
+// suite exercise the exact same decoding path.
 // ===========================================================================
 bool Mt5Bridge::parse_signal(const std::string& frame, ExecSignal& out) {
-    std::memset(&out, 0, sizeof(out));
-    out.valid = 0;
-
-    const char* p = frame.c_str();
-    // Skip topic / leading pipe.
-    if (std::strncmp(p, "signal", 6) == 0) p += 6;
-    if (*p == '|') ++p;
-
-    // ---- side ---------------------------------------------------------- //
-    if (std::strncmp(p, "BUY", 3) == 0) { out.side = 1; p += 3; }
-    else if (std::strncmp(p, "SELL", 4) == 0) { out.side = 2; p += 4; }
-    else return false;
-    if (*p != ',') return false;
-    ++p;
-
-    // ---- reason --------------------------------------------------------- //
-    char reason[24];
-    std::size_t i = 0;
-    while (*p && *p != ',' && i < sizeof(reason) - 1) reason[i++] = *p++;
-    reason[i] = '\0';
-    if (*p != ',') return false;
-    ++p;
-    std::memcpy(out.reason, reason, i + 1);
-
-    // ---- numeric fields -------------------------------------------------- //
-    auto next_num = [&](double& v) -> bool {
-        char num[48];
-        std::size_t n = 0;
-        while (*p && *p != ',' && n < sizeof(num) - 1) num[n++] = *p++;
-        num[n] = '\0';
-        if (*p != ',') return false;
-        ++p;
-        v = std::strtod(num, nullptr);
-        return true;
-    };
-
-    if (!next_num(out.lead))        return false;
-    if (!next_num(out.broker_bid))  return false;
-    if (!next_num(out.broker_ask))  return false;
-    if (!next_num(out.threshold))   return false;
-    if (!next_num(out.edge))        return false;
-
-    // ---- ts_ms (last field, no trailing comma) -------------------------- //
-    {
-        char num[32];
-        std::size_t n = 0;
-        while (*p && *p != ',' && n < sizeof(num) - 1) num[n++] = *p++;
-        num[n] = '\0';
-        out.ts_ms = std::atoll(num);
-    }
-
-    std::memcpy(out.symbol, "BTC/USD", 8);
-    out.valid = 1;
-    return out.side != 0 && out.lead > 0.0;
+    return decode_signal(frame.data(), frame.size(), out);
 }
 
 // ===========================================================================

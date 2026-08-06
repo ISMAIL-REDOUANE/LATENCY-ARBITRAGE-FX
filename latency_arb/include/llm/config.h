@@ -92,7 +92,6 @@ struct Config {
     static std::string binance_bookticker_path(const std::string& symbol);
     static Config from_env();
 
-private:
     Config() = default;
 };
 

@@ -14,6 +14,7 @@ void Aggregator::ingest(TickRing& ring, VenueWindow& win, int64_t now_ms) {
     Tick t;
     while (ring.pop(t)) {
         if (!t.is_valid()) continue;
+        Telemetry::instance().bench_mark(kStageTickRx);
         if (t.ts_ms > 0 && now_ms - t.ts_ms > CompileTime::kMaxTickAgeMs) {
             continue;  // stale — drop per spec
         }
@@ -66,6 +67,7 @@ std::optional<double> Aggregator::update(TickRing& binance, TickRing& deribit,
                       b, d, lead, us ? "us" : "asia", wd, wb);
         Telemetry::instance().log(buf);
     }
+    Telemetry::instance().bench_mark(kStageAggregate);
     return lead;
 }
 

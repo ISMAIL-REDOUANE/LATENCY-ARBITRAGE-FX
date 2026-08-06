@@ -8,6 +8,7 @@
 
 #include "llm/config.h"
 #include "llm/telemetry.h"
+#include "llm/wire.h"
 
 namespace llm {
 
@@ -63,22 +64,15 @@ void ExecutionDispatcher::worker_loop() {
 }
 
 bool ExecutionDispatcher::within_slippage_cap(const Signal& s) const {
-    // Broker-venue cap in pips; BTC-index cap in USD. The edge was computed in
-    // strategy terms of the same unit as the threshold (broker pips). We cap
-    // the deviation of the broker quote against lead accordingly.
-    const double cap = CompileTime::kMaxSlippageBroker;
-    return std::fabs(s.edge) <= cap || s.edge > 0.0;
+    return llm::within_slippage_cap(s);
 }
 
 void ExecutionDispatcher::publish_signal(const Signal& s) {
     char buf[320];
-    std::snprintf(buf, sizeof(buf),
-                  "signal|%s,%s,%.6f,%.6f,%.6f,%.6f,%.6f,%lld",
-                  s.side == Side::Buy ? "BUY" : "SELL",
-                  s.reason.c_str(), s.lead, s.broker_bid, s.broker_ask,
-                  s.threshold, s.edge,
-                  static_cast<long long>(s.ts_ms));
+    const int n = encode_signal(s, buf, sizeof(buf));
+    if (n < 0) return;  // buffer too small — drop, never truncate a signal
     pub_.publish_signal(buf);
+    Telemetry::instance().bench_mark(kStageSignalTx);
     Telemetry::instance().log(
         std::string("\"signal\":{\"side\":\"") +
         (s.side == Side::Buy ? "BUY" : "SELL") + "\",\"lead\":" +

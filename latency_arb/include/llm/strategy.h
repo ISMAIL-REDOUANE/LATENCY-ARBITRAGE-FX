@@ -52,6 +52,11 @@ public:
     Decision evaluate(double lead, const BrokerQuote& q, int64_t now_ms,
                       double& out_threshold);
 
+    // Dynamic_Threshold = Broker_Spread + Latency_Penalty_Buffer
+    //                     + Minimum_Profit_Margin, floored at threshold_pips.
+    // Public so unit tests can assert the exact offset math.
+    double dynamic_threshold(const BrokerQuote& q) const;
+
     // Returns signals only when a side change passes risk gates + cooldown.
     std::optional<Signal> maybe_emit(Decision d, double lead,
                                      const BrokerQuote& q,
@@ -65,7 +70,6 @@ public:
     int  mrpc_open_lots() const;
 
 private:
-    double dynamic_threshold(const BrokerQuote& q) const;
     double round4(double v) const;
     bool   interval_spent(int64_t now_ms) const;
 
