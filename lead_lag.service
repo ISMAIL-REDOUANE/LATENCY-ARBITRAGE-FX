@@ -1,0 +1,70 @@
+# ============================================================================
+# /etc/systemd/system/lead_lag.service
+# ----------------------------------------------------------------------------
+# systemd unit for the Lead-Lag HFT bot (Binance WS -> FXCM executor).
+#
+# Runs the compiled binary as a dedicated system user `leadlag`, restarts it
+# automatically on crash or on boot, and feeds all output to journald so it is
+# inspected with journalctl. Deployed (and regenerated) by ./deploy.sh.
+#
+# Secrets (FXCM_TOKEN, FXCM_ACCOUNT_ID) are NOT inlined here — they live in
+# /etc/lead_lag/lead_lag.env (mode 0600), which systemd loads at start.
+# ============================================================================
+[Unit]
+Description=Lead-Lag HFT bot (Binance WS -> FXCM)
+After=network-online.target
+Wants=network-online.target
+# Wait for NTP so telemetry/log timestamps are accurate.
+After=time-sync.target
+Wants=time-sync.target
+# Crash-loop protection: if the binary fails to stay up, give up after
+# 10 starts within 5 minutes (prevents log spam on an instant crash).
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=leadlag
+Group=leadlag
+SyslogIdentifier=lead_lag
+WorkingDirectory=/opt/lead_lag
+ExecStart=/opt/lead_lag/lead_lag
+
+# --- non-secret configuration ---------------------------------------------
+Environment=BINANCE_SYMBOL=btcusdt
+Environment=FXCM_SYMBOL=BTC/USD
+Environment=DRY_RUN=0
+Environment=LOG_DIR=/var/log/lead_lag
+Environment=LOG_TICKS=0
+Environment=WINDOW_SECONDS=2.0
+Environment=THRESHOLD_PCT=0.05
+Environment=COOLDOWN_SECONDS=30.0
+
+# --- secrets (token / account id), file must be owned root and not
+# --- world- or group-writable (created by deploy.sh as mode 0640):
+EnvironmentFile=/etc/lead_lag/lead_lag.env
+
+# --- restart policy ---------------------------------------------------------
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+# --- resource limits --------------------------------------------------------
+LimitNOFILE=65536
+# Low-latency process priority (requires CAP_SYS_NICE or root; uncomment if
+# the leadlag user has been granted the capability):
+# Nice=-5
+# IOSchedulingPriority=3
+# Pin the process to dedicated cores (adjust to your VPS layout):
+# AllowedCPUs=2-3
+
+# --- hardening (read-only system, writable only to the log directory) -------
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/log/lead_lag
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

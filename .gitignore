@@ -1,0 +1,21 @@
+# Compiled binaries
+lead_lag.exe
+*.exe
+*.o
+*.obj
+*.out
+__pycache__/
+*.pyc
+
+# Build artifacts
+build/
+cmake-build-*/
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local secrets — never commit API tokens
+*.env
