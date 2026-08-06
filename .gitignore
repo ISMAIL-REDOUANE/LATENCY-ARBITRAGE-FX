@@ -19,3 +19,9 @@ Thumbs.db
 
 # Local secrets — never commit API tokens
 *.env
+
+# Lead-Lag engine runtime artifacts (latency_arb/)
+*.log
+latency_arb/build/
+latency_arb/build-*/
+latency_arb/install/

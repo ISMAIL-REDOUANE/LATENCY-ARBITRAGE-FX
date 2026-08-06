@@ -1,0 +1,101 @@
+# =============================================================================
+# lead_lag.service — hardened production systemd unit for the Lead-Lag engine
+#
+# Install:
+#   sudo cp latency_arb/systemd/lead_lag.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now lead_lag
+#
+# Tuning notes:
+#   * CPUSchedulingPolicy=rr + Priority=99 : the 5 hot threads run under
+#     SCHED_RR so the CFS never preempts the arbitrage loop.
+#   * LimitMEMLOCK=infinity : required once mmap'd log regions + realtime
+#     threads (and any eventual mlockall) are enabled.
+#   * Restart=always + RestartSec=1s : guaranteed recovery after any crash.
+# =============================================================================
+
+[Unit]
+Description=Lead-Lag Multi-Venue Arbitrage Engine
+Documentation=file:///opt/lead_lag/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=leadlag
+Group=leadlag
+WorkingDirectory=/opt/lead_lag
+
+# Runtime environment — mirrors config/ll.env exactly.
+Environment=DRY_RUN=true
+Environment=ZMQ_PUB_BIND=ipc:///tmp/latency_arb.ipc
+Environment=BROKER_ZMQ_BIND=tcp://127.0.0.1:5556
+Environment=BROKER_TOPIC=quote
+Environment=BINANCE_SYMBOL=btcusdt
+Environment=BINANCE_HOST=stream.binance.com
+Environment=BINANCE_PORT=9443
+Environment=DERIBIT_SYMBOL=BTC
+Environment=DERIBIT_WS=wss://www.deribit.com/ws/api/v2
+Environment=THRESHOLD_PIPS=0.5
+Environment=LATENCY_BUFFER_PIPS=0.2
+Environment=MIN_PROFIT_MARGIN_PIPS=0.3
+Environment=MIN_LOT_PIPS=0.0
+Environment=MAX_OPEN_LOTS=1
+Environment=MAX_DAILY_LOSS=500.0
+Environment=MAX_ORDERS_PER_INTERVAL=5
+Environment=INTERVAL_SECONDS=60
+Environment=MAX_TRADE_PER_INTERVAL=1.0
+Environment=FOUR_DECIMAL_ROUNDING=1
+Environment=DERIBIT_WEIGHT_ASIA=0.40
+Environment=BINANCE_WEIGHT_ASIA=0.60
+Environment=DERIBIT_WEIGHT_US=0.60
+Environment=BINANCE_WEIGHT_US=0.40
+Environment=USE_DST=true
+Environment=US_OPEN_HOUR_UTC=13
+Environment=US_CLOSE_HOUR_UTC=20
+Environment=MMAP_LOG_DIR=1
+Environment=MMAP_PREALLOC_MB=1
+Environment=MMAP_PREALLOC_BIG_MB=10
+Environment=LOG_DIR=/var/log/lead_lag
+Environment=FIX_ENABLED=false
+Environment=FIX_HOST=127.0.0.1
+Environment=FIX_PORT=5200
+Environment=FIX_SENDER_COMP_ID=LEADLAG
+Environment=FIX_TARGET_COMP_ID=BROKER
+Environment=DRY_RUN_SYMBOL=BTC/USD
+Environment=TRADE_AMOUNT=0.001
+Environment=CPU_STRATEGY=2
+Environment=CPU_EXEC=3
+
+# Restart policy: the engine must always come back up.
+Restart=always
+RestartSec=1s
+
+# ---- real-time scheduling ----------------------------------------------------
+CPUSchedulingPolicy=rr
+CPUSchedulingPriority=99
+LimitRTPRIO=99
+
+# ---- resource limits ----------------------------------------------------------
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+LimitNPROC=1024
+
+# ---- sandbox isolation ---------------------------------------------------------
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+RestrictRealtime=false
+
+# Engine writes logs + mmap region under /var/log/lead_lag only.
+ReadWritePaths=/var/log/lead_lag
+ReadWritePaths=/tmp
+
+# Drop ambient capabilities.
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target
