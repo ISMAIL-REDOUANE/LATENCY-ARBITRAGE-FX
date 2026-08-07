@@ -87,7 +87,7 @@ run() {
 # ----------------------------------------------------------------------------
 install_deps() {
   if [[ "$DRY" == "1" ]]; then
-    log "would install deps: (apt-get update; apt-get install build-essential cmake ninja-build libboost-all-dev libssl-dev nlohmann-json3-dev libzmq3-dev libsodium-dev git python3)"
+    log "would install deps: (apt-get update; apt-get install build-essential cmake ninja-build libboost-all-dev libssl-dev libprotobuf-dev protobuf-compiler nlohmann-json3-dev libzmq3-dev libsodium-dev git python3)"
     return
   fi
   if command -v apt-get >/dev/null 2>&1; then
@@ -99,11 +99,12 @@ install_deps() {
     apt-get install -y --no-install-recommends \
       build-essential g++ gcc cmake ninja-build pkg-config git curl jq python3 ca-certificates \
       libboost-all-dev libssl-dev nlohmann-json3-dev \
-      libzmq3-dev libsodium-dev
+      libzmq3-dev libsodium-dev protobuf-compiler libprotobuf-dev
   elif command -v dnf >/dev/null 2>&1; then
     log "detech package manager: dnf (RHEL-family; Ubuntu/Debian recommended)"
     dnf install -y gcc gcc-c++ cmake ninja-build pkgconfig git curl jq python3 \
-      openssl-devel boost-devel nlohmann-json3-devel zeromq-devel libsodium-devel
+      openssl-devel boost-devel nlohmann-json3-devel zeromq-devel libsodium-devel \
+      protobuf-compiler protobuf-devel
   else
     err "no apt-get or dnf found — supported OS is Ubuntu/Debian 22.04/24.04"
   fi
@@ -137,9 +138,9 @@ do_build() {
   run cmake -S "$src" -B "$src/build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_CXX_COMPILER=g++ -DCMAKE_CXX_FLAGS="-O3 -DNDEBUG"
   # -march=native at configure is risky on cloud VMs; we hardcode the flags above.
-  run cmake --build "$src/build" --target lead_lag oanda_probe -j"$(nproc)"
-  [[ -x "$src/build/lead_lag" && -x "$src/build/oanda_probe" ]] \
-    || err "build did not produce lead_lag / oanda_probe (see CMake output above)"
+  run cmake --build "$src/build" --target lead_lag oanda_probe ctrader_probe -j"$(nproc)"
+  [[ -x "$src/build/lead_lag" && -x "$src/build/oanda_probe" && -x "$src/build/ctrader_probe" ]] \
+    || err "build did not produce lead_lag / oanda_probe / ctrader_probe (see CMake output above)"
 }
 
 # -----------------------------------------------------------------------------
@@ -219,7 +220,7 @@ MAX_ORDERS_PER_INTERVAL=5
 INTERVAL_SECONDS=60
 TRADE_AMOUNT=1.0
 LOG_DIR=$LOG_DIR
-EOFMISSING
+EOF
   run chmod 0600 "$ENV_FILE"
   run chown root:root "$ENV_FILE"
   ENV_FILE=/etc/lead_lag/lead_lag.env
@@ -256,6 +257,7 @@ install_binaries() {
   log "installing binaries to $INSTALL_DIR"
   run install -m 0755 -o "$RUN_USER" -g "$RUN_USER" "$src/lead_lag"   "$INSTALL_DIR/lead_lag"
   run install -m 0755 -o "$RUN_USER" -g "$RUN_USER" "$src/oanda_probe" "$INSTALL_DIR/oanda_probe"
+  run install -m 0755 -o "$RUN_USER" -g "$RUN_USER" "$src/ctrader_probe" "$INSTALL_DIR/ctrader_probe"
 }
 
 install_monitor() {

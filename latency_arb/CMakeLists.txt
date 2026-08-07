@@ -22,6 +22,14 @@ find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 
+# protobuf + protoc for the cTrader Open API wire schemas (proto2).
+find_package(Protobuf QUIET)
+if(Protobuf_FOUND)
+  message(STATUS "protobuf: using libprotobuf ${Protobuf_VERSION}")
+else()
+  message(FATAL_ERROR "libprotobuf-dev / protobuf-compiler not found. Run scripts/deploy_oanda.sh or scripts/install_deps.sh first.")
+endif()
+
 # ZeroMQ
 find_path(ZMQ_INCLUDE_DIR zmq.h)
 find_library(ZMQ_LIBRARY NAMES zmq REQUIRED)
@@ -41,6 +49,42 @@ endif()
 # Boost.Beast needs Boost headers (already found via Boost::system header usage).
 find_package(Boost REQUIRED)
 
+# ---------------------------------------------------------------------------
+# cTrader Open API protobuf schemas (vendored official proto2 definitions).
+# protoc generates *.pb.h / *.pb.cc into ${CMAKE_BINARY_DIR}/openapi-gen.
+# ---------------------------------------------------------------------------
+set(OPENAPI_PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/openapi")
+set(OPENAPI_GEN_DIR "${CMAKE_BINARY_DIR}/openapi-gen")
+file(GLOB OPENAPI_PROTO_FILES "${OPENAPI_PROTO_DIR}/*.proto")
+
+# Explicit protoc invocation (version-independent; protobuf::protoc imported by
+# find_package(Protobuf) — the protobuf_generate(<var>) macro's variable
+# handling changed across CMake versions).
+set(OPENAPI_GEN_SRC)
+set(OPENAPI_GEN_HDR)
+foreach(_proto ${OPENAPI_PROTO_FILES})
+  get_filename_component(_base "${_proto}" NAME_WE)
+  set(_gen_cc "${OPENAPI_GEN_DIR}/${_base}.pb.cc")
+  set(_gen_h  "${OPENAPI_GEN_DIR}/${_base}.pb.h")
+  list(APPEND OPENAPI_GEN_SRC "${_gen_cc}")
+  list(APPEND OPENAPI_GEN_HDR "${_gen_h}")
+  add_custom_command(
+    OUTPUT "${_gen_cc}" "${_gen_h}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${OPENAPI_GEN_DIR}"
+    COMMAND protobuf::protoc
+      --proto_path="${OPENAPI_PROTO_DIR}"
+      --cpp_out="${OPENAPI_GEN_DIR}"
+      "${_proto}"
+    DEPENDS "${_proto}"
+    COMMENT "protoc ${_base}.proto"
+    VERBATIM
+  )
+endforeach()
+if(NOT OPENAPI_GEN_SRC)
+  message(FATAL_ERROR "no .proto files found in ${OPENAPI_PROTO_DIR}")
+endif()
+set_source_files_properties(${OPENAPI_GEN_SRC} PROPERTIES GENERATED TRUE)
+
 add_library(llm_core
   src/config.cpp
   src/zmq_pub.cpp
@@ -49,15 +93,19 @@ add_library(llm_core
   src/telemetry.cpp
   src/wire.cpp
   src/oanda_executor.cpp
+  src/ctrader_executor.cpp
+  ${OPENAPI_GEN_SRC}
 )
 target_include_directories(llm_core PUBLIC include ${ZMQ_INCLUDE_DIR})
 target_include_directories(llm_core PUBLIC ${NLOHMANN_JSON_INCLUDE_DIR})
+target_include_directories(llm_core PUBLIC ${OPENAPI_GEN_DIR})
 target_compile_definitions(llm_core PUBLIC BOOST_BEAST_USE_STD_STRING_VIEW)
 target_link_libraries(llm_core PUBLIC
   Threads::Threads
   ${ZMQ_LIBRARY}
   ${SODIUM_LIBRARY}
   Boost::system
+  protobuf::libprotobuf
 )
 if(OpenSSL_FOUND)
   target_link_libraries(llm_core PUBLIC OpenSSL::SSL OpenSSL::Crypto)
@@ -87,6 +135,12 @@ target_link_libraries(lead_lag PRIVATE llm_core Boost::system)
 add_executable(oanda_probe src/bin/oanda_probe_main.cpp)
 target_include_directories(oanda_probe PRIVATE include)
 target_link_libraries(oanda_probe PRIVATE llm_core Boost::system)
+
+# Standalone cTrader Open API order probe (diagnostics): one market order
+# against IC Markets demo using CTRADER_CLIENT_ID/SECRET/ACCOUNT/TOKEN env vars.
+add_executable(ctrader_probe src/bin/ctrader_probe_main.cpp)
+target_include_directories(ctrader_probe PRIVATE include)
+target_link_libraries(ctrader_probe PRIVATE llm_core Boost::system)
 
 # Pure C++20 native MT5 execution bridge (no Python).
 add_executable(mt5_bridge
@@ -156,3 +210,4 @@ include(GNUInstallDirs)
 install(TARGETS lead_lag mt5_bridge RUNTIME DESTINATION bin)
 install(TARGETS tick_replay RUNTIME DESTINATION bin)
 install(TARGETS oanda_probe RUNTIME DESTINATION bin)
+install(TARGETS ctrader_probe RUNTIME DESTINATION bin)

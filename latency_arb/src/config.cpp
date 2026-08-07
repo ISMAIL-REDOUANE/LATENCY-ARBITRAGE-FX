@@ -87,6 +87,16 @@ Config Config::from_env() {
     if ((v = env("OANDA_INSTRUMENT")))  c.oanda_instrument = v;
     c.oanda_enabled = benv("OANDA_ENABLED", c.oanda_enabled);
 
+    // ---- cTrader Open API execution ---------------------------------------- //
+    if ((v = env("CTRADER_CLIENT_ID")))     c.ctrader_client_id     = v;
+    if ((v = env("CTRADER_CLIENT_SECRET"))) c.ctrader_client_secret = v;
+    if ((v = env("CTRADER_ACCOUNT_ID")))    c.ctrader_account_id    = v;
+    if ((v = env("CTRADER_ACCESS_TOKEN")))  c.ctrader_access_token  = v;
+    if ((v = env("CTRADER_HOST")))          c.ctrader_host          = v;
+    if ((v = env("CTRADER_PORT")))          c.ctrader_port          = v;
+    if ((v = env("CTRADER_SYMBOL")))        c.ctrader_symbol        = v;
+    c.ctrader_enabled = benv("CTRADER_ENABLED", c.ctrader_enabled);
+
     c.dry_run      = benv("DRY_RUN", c.dry_run);
     if ((v = env("DRY_RUN_SYMBOL")))     c.dry_run_symbol = v;
     c.trade_amount = denv("TRADE_AMOUNT", c.trade_amount);

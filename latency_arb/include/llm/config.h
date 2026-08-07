@@ -86,6 +86,16 @@ struct Config {
     std::string oanda_instrument    = "XAU_USD";  // default mapped instrument
     bool        oanda_enabled       = false;
 
+    // ---- cTrader Open API execution (IC Markets) ------------------------ //
+    std::string ctrader_client_id     = "";   // CTRADER_CLIENT_ID
+    std::string ctrader_client_secret = "";   // CTRADER_CLIENT_SECRET
+    std::string ctrader_account_id    = "";   // CTRADER_ACCOUNT_ID (numeric)
+    std::string ctrader_access_token  = "";   // CTRADER_ACCESS_TOKEN
+    std::string ctrader_host          = "openapi.ctrader.com"; // demo host
+    std::string ctrader_port          = "5030";                // demo port
+    std::string ctrader_symbol        = "XAU/USD";            // CTRADER_SYMBOL
+    bool        ctrader_enabled       = false;                // CTRADER_ENABLED
+
     bool        dry_run             = true;
     std::string dry_run_symbol      = "BTC/USD";
     double      trade_amount        = 0.001;
