@@ -1,0 +1,110 @@
+# =============================================================================
+# ci.yml — multi-compiler build + test validation for the Lead-Lag engine.
+#
+# Runs on every push / pull_request against `main` over a matrix of compilers:
+#   * gcc-12
+#   * clang-15
+#
+# Pipeline per job:
+#   1. Install runtime + build dependencies (libzmq, OpenSSL, Boost, libsodium,
+#      nlohmann-json, Ninja) and the pinned compiler.
+#   2. Configure CMake (Release) with the low-latency production flags already
+#      encoded in CMakeLists.txt (-O3 -march=native -flto -funroll-loops
+#      -ffast-math).
+#   3. Build all three targets: lead_lag, mt5_bridge, latency_tests.
+#   4. Run CTest; on failure the full log is printed (verbose output).
+#
+# NOTE: -march=native targets the GitHub-hosted runner CPU, so the artifacts
+# are CI-validation binaries, not distributable builds.
+# =============================================================================
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: build-${{ matrix.cc }} (${{ matrix.url_name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gcc12
+            cc: gcc-12
+            cxx: g++-12
+            url_name: gcc-12
+            deps: gcc-12 g++-12
+          - name: clang15
+            cc: clang-15
+            cxx: clang++-15
+            url_name: clang-15
+            deps: clang-15 clang-tools-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---- install system dependencies ------------------------------------ #
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libzmq3-dev \
+            libssl-dev \
+            libboost-all-dev \
+            libsodium-dev \
+            nlohmann-json3-dev \
+            ${{ matrix.deps }}
+          printf 'installed deps: %s %s\n' "${{ matrix.cc }}" "${{ matrix.cxx }}"
+
+      # ---- configure ------------------------------------------------------- #
+      - name: Configure (Release + Ninja, ${{ matrix.url_name }})
+        working-directory: latency_arb
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=${{ matrix.cc }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          # Low-latency production flags are applied to llm_core by
+          # CMakeLists (Release): -O3 -march=native -flto -funroll-loops
+          # -ffast-math. Echo the yielded flags so the log proves it.
+          grep -E -- '-O3|-march=native|-flto|-ffast-math' build/compile_commands.json \
+            | head -5 || true
+
+      # ---- build all targets ------------------------------------------------ #
+      - name: Build (lead_lag, mt5_bridge, latency_tests)
+        working-directory: latency_arb
+        run: |
+          cmake --build build -j"$(nproc)" \
+            --target lead_lag mt5_bridge latency_tests
+
+      # ---- run the test suite ------------------------------------------------ #
+      - name: Run CTest
+        working-directory: latency_arb
+        run: |
+          ctest --test-dir build --output-on-failure --output-junit ctest-report.xml
+          EXIT=$?
+          if [ $EXIT -ne 0 ]; then
+            echo "::error::CTest failed — re-running with full verbose log:"
+            ctest --test-dir build -V
+          fi
+          exit $EXIT
+
+      - name: Upload CTest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-report-${{ matrix.url_name }}
+          path: latency_arb/build/ctest-report.xml
+          if-no-files-found: ignore
