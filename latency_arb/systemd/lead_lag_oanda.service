@@ -1,0 +1,89 @@
+# =============================================================================
+# lead_lag_oanda.service — hardened production systemd unit for the Lead-Lag
+# engine with OANDA v2 (REST) execution over a persistent TLS connection.
+#
+# Installed automatically by scripts/deploy_oanda.sh. Manual install:
+#   sudo cp latency_arb/systemd/lead_lag_oanda.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now lead_lag_oanda
+#
+# CRITICAL SECURITY NOTE ON DRY_RUN:
+#   The engine's runtime secrets live in the (0600, root-owned) env file
+#   /etc/lead_lag/lead_lag.env, loaded via EnvironmentFile BELOW.
+#   Environment= lines ALWAYS override EnvironmentFile, so if we pinned
+#   DRY_RUN=0 here you could never switch to dry-run for a dry test run.
+#   Therefore DRY_RUN is intentionally NOT set here — it is read from the
+#   env file, whose deploy_oanda.sh default is DRY_RUN=0 (LIVE ORDERS).
+#   To operate safely: set DRY_RUN=1 in /etc/lead_lag/lead_lag.env and
+#   # sudo systemctl restart lead_lag_oanda .
+# =============================================================================
+
+[Unit]
+Description=Lead-Lag Arbitrage Engine (OANDA v2 execution, persistent TLS)
+Documentation=file:///opt/lead_lag/DEPLOYMENT.md
+After=network-online.target
+Wants=network-online.target
+
+# if it crashes 10+ times in 300s, stop trying (prevents tight reboot loop)
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=leadlag
+Group=leadlag
+WorkingDirectory=/opt/lead_lag
+
+# ---- secrets & runtime config (0600 root file) ---------------------------
+EnvironmentFile=-/etc/lead_lag/lead_lag.env
+
+# ---- force OANDA execution on --------------------------------------------
+Environment=OANDA_ENABLED=1
+
+# ---- engine tunables (mirror defaults; env file may override) -----------
+Environment=ZMQ_PUB_BIND=ipc:///tmp/latency_arb.ipc
+Environment=BROKER_ZMQ_BIND=tcp://127.0.0.1:5556
+Environment=BROKER_TOPIC=quote
+Environment=BINANCE_SYMBOL=btcusdt
+Environment=BINANCE_HOST=stream.binance.com
+Environment=BINANCE_PORT=9443
+Environment=THRESHOLD_PIPS=0.5
+Environment=LATENCY_BUFFER_PIPS=0.2
+Environment=MIN_PROFIT_MARGIN_PIPS=0.3
+Environment=MIN_LOT_PIPS=0.0
+Environment=MAX_OPEN_LOTS=1
+Environment=MAX_DAILY_LOSS=10.0
+Environment=MAX_ORDERS_PER_INTERVAL=5
+Environment=INTERVAL_SECONDS=60
+Environment=MMAP_LOG_DIR=1
+Environment=LOG_DIR=/var/log/lead_lag
+Environment=TRADE_AMOUNT=1.0
+
+# ---- restart: crash-loop protection ---------------------------------------
+Restart=always
+RestartSec=5
+
+# ---- real-time scheduling (latency-sensitive) ------------------------------
+CPUSchedulingPolicy=rr
+CPUSchedulingPriority=99
+LimitRTPRIO=99
+
+# ---- resource limits --------------------------------------------------------
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+LimitNPROC=1024
+
+# ---- sandbox hardening ------------------------------------------------------
+# ProtectSystem=full + ReadWritePaths allows writes to /var/log/lead_lag only.
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+RestrictRealtime=false          # threads need RT soon
+ReadWritePaths=/var/log/lead_lag
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target
