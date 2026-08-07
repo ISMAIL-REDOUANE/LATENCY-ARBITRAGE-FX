@@ -90,6 +90,32 @@ if(WIN32)
 endif()
 
 # ---------------------------------------------------------------------------
+# Backtest / replay subsystem — dependency-free (pure config/strategy/
+# telemetry + backtest sources; NO libzmq/Boost/OpenSSL), so both the tick
+# replay binary and its unit tests build on a fresh box.
+# ---------------------------------------------------------------------------
+add_library(llm_backtest STATIC
+  src/backtest/tick_binary.cpp
+  src/backtest/execution_simulator.cpp
+  src/backtest/backtest_engine.cpp
+  src/config.cpp
+  src/strategy.cpp
+  src/telemetry.cpp
+)
+target_include_directories(llm_backtest PUBLIC include)
+target_compile_definitions(llm_backtest PUBLIC BOOST_BEAST_USE_STD_STRING_VIEW)
+target_link_libraries(llm_backtest PUBLIC Threads::Threads)
+
+# Tick replay / backtest CLI.
+add_executable(tick_replay src/bin/tick_replay_main.cpp)
+target_link_libraries(tick_replay PRIVATE llm_backtest)
+if(CMAKE_BUILD_TYPE MATCHES "Release|RelWithDebInfo")
+  target_compile_options(tick_replay PRIVATE
+    -O3 -march=native -DNDEBUG -flto -funroll-loops -ffast-math
+  )
+endif()
+
+# ---------------------------------------------------------------------------
 # Unit + benchmark suite — dependency-free (pure config/strategy/aggregator/
 # telemetry/wire; NO libzmq/Boost/OpenSSL), so `ctest` passes even on a fresh
 # box that has not installed the runtime deps.
@@ -110,5 +136,13 @@ target_compile_options(latency_tests PRIVATE -O2 -g -Wno-mismatched-new-delete)
 target_link_libraries(latency_tests PRIVATE Threads::Threads)
 add_test(NAME latency_tests COMMAND latency_tests)
 
+# Backtest subsystem unit tests (execution simulator fill mechanics).
+add_executable(backtest_tests tests/test_backtest.cpp)
+target_include_directories(backtest_tests PRIVATE include)
+target_compile_options(backtest_tests PRIVATE -O2 -g)
+target_link_libraries(backtest_tests PRIVATE llm_backtest Threads::Threads)
+add_test(NAME backtest_tests COMMAND backtest_tests)
+
 include(GNUInstallDirs)
 install(TARGETS lead_lag mt5_bridge RUNTIME DESTINATION bin)
+install(TARGETS tick_replay RUNTIME DESTINATION bin)
