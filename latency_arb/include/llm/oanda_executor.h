@@ -22,9 +22,14 @@
 // measured with std::chrono::high_resolution_clock from just before the request
 // body is issued until the HTTP response headers arrive, and logged in ms.
 //
-// Threading: a mutex + FIFO queue serializes sends. Like FixClient, the worker
-// thread owns one in-flight request at a time (queued orders are drained in
-// order), which bounds stack/state and respects OANDA's request-rate limits.
+// Threading: a mutex + FIFO queue serializes sends; the worker thread is the
+// SOLE owner of the persistence boost::beast::ssl::stream, so there is no data
+// race on it (all access happens inside worker_loop -> send_market_order).
+//
+// Persistent connection: the TLS stream is opened once in connect() and
+// REUSED across orders, eliminating the per-trade TCP connect + TLS handshake
+// cost. If a request fails (network error / server close), the stream is torn
+// down, the connection is re-established, and the order is retried once.
 // ===========================================================================
 
 #include <atomic>
@@ -32,6 +37,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <string>
 
@@ -100,11 +106,24 @@ private:
     void worker_loop();
     OandaExecutionResult send_market_order(const OrderJob& job);
 
-    // Asio I/O (owned by the worker thread; guard with ssl streams).
-    boost::asio::io_context io_;
-    boost::asio::ssl::context ssl_{boost::asio::ssl::context::tlsv12_client};
+    // Persistent connection management (worker thread only).
+    bool connect();                     // open TCP + TLS (TCP_NODELAY, no-delay)
+    void disconnect();                  // close + clear the broken stream
+
+    // Returns true if the underlying socket is currently open.
+    bool connected() const;
+
+    // Asio I/O. The io_context and ssl::context outlive the stream; the
+    // stream member is owned exclusively by the worker thread.
+    boost::asio::io_context                          io_;
+    boost::asio::ssl::context  ssl_{boost::asio::ssl::context::tlsv12_client};
+    std::unique_ptr<boost::asio::ssl::stream<boost::asio::ip::tcp::socket>> stream_;
 
     const Config& cfg_;
+
+    std::string host_ = "api-fxpractice.oanda.com";  // resolved once
+    std::string port_ = "443";
+    std::atomic<bool> connected_{false};
 
     std::thread             thread_;
     std::atomic<bool>       running_{false};
