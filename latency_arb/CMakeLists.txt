@@ -48,6 +48,7 @@ add_library(llm_core
   src/strategy.cpp
   src/telemetry.cpp
   src/wire.cpp
+  src/oanda_executor.cpp
 )
 target_include_directories(llm_core PUBLIC include ${ZMQ_INCLUDE_DIR})
 target_include_directories(llm_core PUBLIC ${NLOHMANN_JSON_INCLUDE_DIR})
@@ -56,6 +57,7 @@ target_link_libraries(llm_core PUBLIC
   Threads::Threads
   ${ZMQ_LIBRARY}
   ${SODIUM_LIBRARY}
+  Boost::system
 )
 if(OpenSSL_FOUND)
   target_link_libraries(llm_core PUBLIC OpenSSL::SSL OpenSSL::Crypto)
@@ -76,7 +78,6 @@ add_executable(lead_lag
   src/broker_sub.cpp
   src/execution.cpp
   src/fix_client.cpp
-  src/oanda_executor.cpp
 )
 target_link_libraries(lead_lag PRIVATE llm_core Boost::system)
 
