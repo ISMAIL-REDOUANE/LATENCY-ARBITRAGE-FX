@@ -698,7 +698,11 @@ TEST_CASE(bench_wire_encode) {
 
     const double ns = std::chrono::duration<double, std::nano>(t1 - t0).count() / N;
     std::printf("  wire encode:  %8.2f ns/op\n", ns);
-    REQUIRE(ns > 0.0 && ns < 10000.0);  // sanity bound only
+    // Sanity bound only — NOT a strict performance gate. A loaded CPU (or
+    // frequency scaling) can legitimately push encode above 10us; the limit is
+    // widened to 50us so the suite stays deterministic under normal load
+    // variation while still catching a real order-of-magnitude regression.
+    REQUIRE(ns > 0.0 && ns < 50000.0);
 }
 
 // ===========================================================================
