@@ -10,7 +10,11 @@
 #include <boost/beast/ssl.hpp>
 #include <boost/beast/websocket.hpp>
 #include <boost/beast/websocket/ssl.hpp>
+#include <boost/core/ignore_unused.hpp>
 #include <nlohmann/json.hpp>
+
+#include <openssl/err.h>
+#include <openssl/ssl.h>
 
 #include "llm/telemetry.h"
 
@@ -43,7 +47,7 @@ public:
 
 private:
     void on_resolve(beast::error_code ec, tcp::resolver::results_type results) {
-        if (ec) return fail("resolve", ec);
+        if (ec) return fail(ec, "resolve");
         beast::get_lowest_layer(ws_).expires_after(std::chrono::seconds(30));
         beast::get_lowest_layer(ws_).async_connect(
             results,
@@ -52,11 +56,16 @@ private:
 
     void on_connect(beast::error_code ec,
                     tcp::resolver::results_type::endpoint_type ep) {
-        beast::ignore_unused(ep);
-        if (ec) return fail("connect", ec);
-        beast::error_code sni;
-        ws_.next_layer().set_tls_host_name(owner_.cfg_.binance_host, sni);
-        if (sni) return fail("sni", sni);
+        boost::ignore_unused(ep);
+        if (ec) return fail(ec, "connect");
+        // SNI: Beast removed set_tls_host_name; set it on the OpenSSL handle.
+        const int sni_rc = SSL_set_tlsext_host_name(
+            ws_.next_layer().native_handle(), owner_.cfg_.binance_host.c_str());
+        if (sni_rc != 1)
+            return fail(beast::error_code(
+                            static_cast<int>(ERR_get_error()),
+                            net::error::get_ssl_category()),
+                        "set_tls_host_name");
         beast::get_lowest_layer(ws_).expires_after(std::chrono::seconds(30));
         ws_.next_layer().async_handshake(
             ssl::stream_base::client,
@@ -65,7 +74,7 @@ private:
     }
 
     void on_ssl_handshake(beast::error_code ec) {
-        if (ec) return fail("tls_handshake", ec);
+        if (ec) return fail(ec, "tls_handshake");
         beast::get_lowest_layer(ws_).expires_never();
         try {
             beast::get_lowest_layer(ws_).socket().set_option(tcp::no_delay{true});
@@ -84,7 +93,7 @@ private:
     }
 
     void on_ws_handshake(beast::error_code ec) {
-        if (ec) return fail("ws_handshake", ec);
+        if (ec) return fail(ec, "ws_handshake");
         Telemetry::instance().log(
             std::string("\"binance\":{\"connected\":\"") +
             owner_.cfg_.binance_path + "\"}");
@@ -99,8 +108,8 @@ private:
     }
 
     void on_read(beast::error_code ec, std::size_t bytes) {
-        beast::ignore_unused(bytes);
-        if (ec) return fail("read", ec);
+        boost::ignore_unused(bytes);
+        if (ec) return fail(ec, "read");
         owner_.handle_message(beast::buffers_to_string(buffer_.data()));
         do_read();
     }
@@ -211,24 +220,9 @@ void BinanceWs::handle_message(const std::string& msg) {
         t.venue = Venue::Binance;
         t.valid = 1;
         out_.push(t);
-    } catch (...) {
+} catch (...) {
         /* malformed frame — ignore, keep reading */
     }
-}
-
-void BinanceWs::schedule_reconnect(double delay_s) {
-    Telemetry::instance().log_warn(std::string("\"binance\":{\"reconnect_in_s\":") +
-                                   std::to_string(delay_s) + "}");
-    if (stopped_.load() || !io_) return;
-    auto& ioc = *reinterpret_cast<net::io_context*>(io_);
-    auto timer = std::make_shared<net::steady_timer>(
-        net::make_strand(ioc),
-        std::chrono::milliseconds(static_cast<long long>(delay_s * 1000)));
-    timer->async_wait([this, timer](beast::error_code ec) {
-        (void)timer;
-        if (ec || stopped_.load()) return;
-        spawn_session();
-    });
 }
 
 }  // namespace llm

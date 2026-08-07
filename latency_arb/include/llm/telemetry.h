@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -12,6 +13,8 @@
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <intrin.h>
+#elif defined(__x86_64__) || defined(__i386__)
+#include <x86intrin.h>
 #endif
 
 namespace llm {
@@ -29,6 +32,16 @@ inline uint64_t rdtsc() noexcept {
     unsigned int aux;
 #if defined(_MSC_VER) || defined(__MINGW32__)
     return static_cast<uint64_t>(_rdtscp(&aux));
+#elif defined(__GNUC__)
+    // GCC/Clang: __rdtscp comes from <x86intrin.h>; falls back to raw RDTSC
+    // (via inline asm) if the intrinsic is unavailable for the target.
+#if defined(__has_include) && __has_include(<x86intrin.h>)
+    return static_cast<uint64_t>(__rdtscp(&aux));
+#else
+    uint32_t lo, hi;
+    __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi) : : "memory");
+    return (static_cast<uint64_t>(hi) << 32) | lo;
+#endif
 #else
     return static_cast<uint64_t>(__rdtscp(&aux));
 #endif
