@@ -1,0 +1,92 @@
+# =============================================================================
+# docker-compose — dry-run Lead-Lag engine + optional self-test.
+#
+# The engine binds a ZMQ PUB on ipc:// and subscribes to a broker on
+# tcp://127.0.0.1:5556, so it must share the host network namespace
+# (network_mode: host). All config comes from the .env block below or the
+# referenced env file; defaults mirror config/ll.env with DRY_RUN=true.
+#
+#   docker compose up --build -d     # launch dry-run engine
+#   docker compose run --rm tests    # run the benchmark/unit suite once
+#
+# Deploying the engine to a host systemd instance instead:
+#   sudo ./scripts/deploy_linux.sh --systemd --target /opt/lead_lag
+# =============================================================================
+
+services:
+  lead_lag:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lead_lag:latest
+    container_name: lead_lag
+    network_mode: host                 # needs host ipc: + loopback ZMQ broker
+    restart: unless-stopped
+    environment:
+      # Dry-run safety: this stack ALWAYS runs in paper mode. Real orders are
+      # only possible when an operator flips DRY_RUN=false with live creds.
+      DRY_RUN: "true"
+      DRY_RUN_SYMBOL: "BTC/USD"
+      TRADE_AMOUNT: "0.001"
+      # Feeds.
+      BINANCE_SYMBOL: "btcusdt"
+      BINANCE_HOST: "stream.binance.com"
+      BINANCE_PORT: "9443"
+      DERIBIT_SYMBOL: "BTC"
+      DERIBIT_WS: "wss://www.deribit.com/ws/api/v2"
+      # Broker ZMQ subscriber (OmsBroker-style local pub).
+      BROKER_ZMQ_BIND: "tcp://127.0.0.1:5556"
+      BROKER_TOPIC: "quote"
+      # Signal pub consumed by the C++ MT5 bridge.
+      ZMQ_PUB_BIND: "ipc:///tmp/latency_arb.ipc"
+      MT5_BRIDGE_HOST: "127.0.0.1"
+      MT5_BRIDGE_PORT: "6161"
+      # Execution stays disabled in dry run.
+      FIX_ENABLED: "false"
+      # Logging / mmap.
+      MMAP_LOG_DIR: "1"
+      MMAP_PREALLOC_MB: "1"
+      MMAP_PREALLOC_BIG_MB: "10"
+      LOG_DIR: "/var/log/lead_lag"
+      # Strategy + risk (production defaults, overridable).
+      THRESHOLD_PIPS: "0.5"
+      LATENCY_BUFFER_PIPS: "0.2"
+      MIN_PROFIT_MARGIN_PIPS: "0.3"
+      MIN_LOT_PIPS: "0.0"
+      MAX_OPEN_LOTS: "1"
+      MAX_DAILY_LOSS: "500.0"
+      MAX_ORDERS_PER_INTERVAL: "5"
+      INTERVAL_SECONDS: "60"
+      MAX_TRADE_PER_INTERVAL: "1.0"
+      FOUR_DECIMAL_ROUNDING: "1"
+      DERIBIT_WEIGHT_ASIA: "0.40"
+      BINANCE_WEIGHT_ASIA: "0.60"
+      DERIBIT_WEIGHT_US: "0.60"
+      BINANCE_WEIGHT_US: "0.40"
+      USE_DST: "true"
+      US_OPEN_HOUR_UTC: "13"
+      US_CLOSE_HOUR_UTC: "20"
+    volumes:
+      - lead_lag_logs:/var/log/lead_lag
+    cap_add:
+      - SYS_NICE                  # allow realtime-ish scheduling hints
+      - IPC_LOCK                  # required once mlockall/mmap+mlock is used
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 5s
+
+  # Run-once benchmark suite against the freshly built image. Reuses the build
+  # (no recompile), executes latency_tests, then exits.
+  tests:
+    image: lead_lag:latest
+    container_name: lead_lag_tests
+    depends_on:
+      - lead_lag
+    network_mode: host
+    environment:
+      DRY_RUN: "true"
+    entrypoint: ["/opt/lead_lag/latency_tests"]
+    profiles: ["tests"]
+
+volumes:
+  lead_lag_logs:
