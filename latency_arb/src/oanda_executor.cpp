@@ -7,11 +7,11 @@
 #include <utility>
 #include <vector>
 
-namespace boost  = boost::beast;
-namespace http   = boost::beast::http;
-namespace asio   = boost::asio;
-namespace ssl    = boost::asio::ssl;
-using   tcp      = boost::asio::ip::tcp;
+namespace beast = boost::beast;
+namespace http  = beast::http;
+namespace asio  = boost::asio;
+namespace ssl   = boost::asio::ssl;
+using   tcp     = boost::asio::ip::tcp;
 
 namespace {
 
@@ -164,7 +164,7 @@ bool OandaExecutor::connect() {
 void OandaExecutor::disconnect() {
     connected_.store(false);
     if (stream_) {
-        beast::error_code ec;
+        boost::system::error_code ec;
         stream_->shutdown(ec);   // best-effort TLS shutdown
         stream_->next_layer().close(ec);
         stream_.reset();

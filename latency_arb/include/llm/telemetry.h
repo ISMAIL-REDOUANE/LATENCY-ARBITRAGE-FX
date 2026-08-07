@@ -27,24 +27,13 @@ namespace llm {
 // wall-time fallback used for calibration and non-x86 builds. All timestamp
 // helpers here are header-only, inline, and allocation-free.
 // ---------------------------------------------------------------------------
-inline uint64_t rdtsc() noexcept {
-#if (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))
+inline uint64_t rdtsc() {
+#if defined(_MSC_VER)
     unsigned int aux;
-#if defined(_MSC_VER) || defined(__MINGW32__)
-    return static_cast<uint64_t>(_rdtscp(&aux));
-#elif defined(__GNUC__)
-    // GCC/Clang: __rdtscp comes from <x86intrin.h>; falls back to raw RDTSC
-    // (via inline asm) if the intrinsic is unavailable for the target.
-#if defined(__has_include) && __has_include(<x86intrin.h>)
     return static_cast<uint64_t>(__rdtscp(&aux));
-#else
-    uint32_t lo, hi;
-    __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi) : : "memory");
-    return (static_cast<uint64_t>(hi) << 32) | lo;
-#endif
-#else
-    return static_cast<uint64_t>(__rdtscp(&aux));
-#endif
+#elif defined(__x86_64__) || defined(__i386__)
+    unsigned int aux;
+    return static_cast<uint64_t>(__builtin_ia32_rdtscp(&aux));
 #else
     return static_cast<uint64_t>(
         std::chrono::steady_clock::now().time_since_epoch().count());
