@@ -75,12 +75,34 @@ uses `mmap` (POSIX) / `MapViewOfFile` (Windows) for zero-copy parsing.
 | `--margin <pts>`  | `0.3`                       | `min_profit_margin_pips` override |
 | `--max-loss <usd>`| `500.0`                     | `max_daily_loss` override |
 | `--volume <lots>` | `1.0`                       | Order quantity (notional lots) |
+| `--pnl-model <m>` | `hold`                      | `hold` (captures the lead→lag catch-up) or `instant` (pays the spread every trade) |
+| `--hold-tol <pts>` | `0.05`                    | Close a held position when `\|lag_mid − lead_mid\| ≤ pts` |
+| `--hold-max-ms <ms>` | `0`                     | Max hold before a forced market close (`0` = no time cap) |
 | `--convert-csv <in.csv> <out.bin>` | —    | One-shot CSV→binary helper |
 | `--help`          | —                           | Print usage |
 
 The primary run uses `--delay-ms`. Independently, the engine also sweeps a
 **Latency Decay Matrix** over `0/5/15/30/50/100` ms to show how the edge decays
 as execution speed falls.
+
+### PnL model: hold-to-convergence (default)
+
+The default `--pnl-model hold` is a **held-position** attribution:
+
+1. A signal fills at `T_signal + delay` (entry at the fill-time lag quote).
+2. The position is **held**, and on each subsequent lag tick the engine checks
+   whether the lag mid has converged to the lead mid (`|lag_mid − lead_mid| ≤
+   hold-tol`).
+3. On convergence (or after `--hold-max-ms`, or at end of stream) the long is
+   closed at the **lag bid** and the short at the **lag ask** — so the round
+   trip captures the lead-to-lag catch-up the strategy bet on.
+
+The legacy `--pnl-model instant` marks the fill against the **same** fill-time
+book (`exec_ask` entry vs `exec_bid` exit), which by construction always pays
+the full spread and can never realise a positive edge — it is kept only for
+comparison. On the mock random-walk data (`gen_data.py --random-walk`), `hold`
+returns a strongly positive PnL with a healthy profit factor and Sharpe, while
+`instant` returns a strictly negative PnL equal to `−(spread) × fills`.
 
 > All options are positional-style flags; `--lead` and `--lag` are required for
 > replay. Strategy cooldown and the per-interval order cap are disabled in
@@ -121,8 +143,8 @@ as execution speed falls.
 |-------|---------|
 | `ticks.lead` / `ticks.lag` | Ticks consumed from each stream during the chronological merge. |
 | `signals` | Signals emitted by the strategy (risk-gated, cooldown disabled). |
-| `fills` / `rejections` | Order outcomes: fills crossed the post-delay book; rejections hit the spread / slippage / invalid-price caps. |
-| `pnl.total` | Net round-trip PnL for the whole run (negative when the retail spread exceeds the captured edge). |
+| `fills` / `rejections` | Order outcomes: fills are entry fills that opened a position; rejections hit the spread / slippage / invalid-price caps. |
+| `pnl.total` | Net round-trip PnL for the whole run. With `--pnl-model hold` this is the **realised** catch-up edge (positive on correlated momentum data); with `instant` it is always negative (spread paid on every fill). |
 | `pnl.gross_profit` / `gross_loss` | Sum of winning / losing trades. |
 | `pnl.profit_factor` | `gross_profit / |gross_loss|` (infinity is reported as `1e9` when there are no losses). |
 | `sharpe.per_trade` | `mean(pnl) / std(pnl)` over filled trades. |
@@ -138,9 +160,12 @@ edge captured by the strategy shrinks. A healthy setup shows **PnL flattening
 or turning negative as delay increases** — that is the latency budget the
 production execution path must stay inside.
 
-In the example above every delay yields `-1.0` per trade because the synthetic
-lead is a constant 100 pts above the lag; the entire run loses exactly the
-1-pt retail spread on each fill (buy at `ask`, exit at `bid`).
+In a flat (non-trending) mock feed every delay yields a negative PnL because
+the synthetic lead holds a constant gap above the lag; the default `hold`
+model still pays the 1-pt retail spread on each fill (buy at `ask`, exit at
+`bid`) since the lag never catches up. Feed it trending data
+(`gen_data.py --random-walk`) and the matrix turns positive, decaying
+monotonically as `delay_ms` grows.
 
 ---
 
@@ -177,7 +202,7 @@ cmake --build build --target tick_replay backtest_tests
 ./build/tick_replay --convert-csv data/lead.csv data/lead.bin
 ./build/tick_replay --convert-csv data/lag.csv  data/lag.bin
 
-# 3) Replay with 5 ms execution delay.
+# 3) Replay with 5 ms execution delay (default hold-to-convergence PnL model).
 ./build/tick_replay --lead data/lead.bin --lag data/lag.bin \
     --delay-ms 5 --report build/backtest_report.json --equity build/equity.csv
 

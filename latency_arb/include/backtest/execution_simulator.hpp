@@ -7,9 +7,26 @@
 
 namespace llm {
 
+// PnL attribution model for the backtest engine.
+//
+//  * Instant — the historical behaviour: a buy fills at the fill-time ask and
+//    is immediately marked to the fill-time bid (and vice-versa for a sell).
+//    Because both legs are against the SAME fill-time book, this always pays
+//    the full spread on every trade and can never realise a positive edge.
+//
+//  * HoldConvergence — the "fixed" latency-arbitrage model: the fill opens a
+//    held position, which is closed at the first later lag tick where the lag
+//    mid has converged to the lead mid (or after a max holding period / at end
+//    of stream). The long exits at the lag bid, the short at the lag ask, so
+//    the strategy can actually capture the lead-to-lag catch-up it bet on.
+enum class PnlModel : int {
+    Instant        = 0,
+    HoldConvergence = 1,
+};
+
 // ===========================================================================
-// Execution simulator — models a fill against the lag/retail feed at time
-// (T_signal + T_exec).
+// Execution simulator — models a market fills against the lag/retail feed at
+// time (T_signal + T_exec).
 //
 // The simulator is deliberately decoupled from the replay loop:
 //   * submit() records a latent order with the quote captured at signal time
@@ -35,6 +52,18 @@ struct ExecutionParams {
     double   spread_cap_pts     = 100.0; // reject if post-delay spread > cap
     double   slippage_cap_pts   = 100.0; // reject if modeled slippage > cap
     double   quantity           = 1.0;  // notional lots on the order
+
+    // PnL attribution (inputs to the engine's fill book-keepers).
+    PnlModel pnl_model          = PnlModel::HoldConvergence;
+    // HoldConvergence only: exit when |lag_mid - lead_mid| <= this (points).
+    double   hold_tol_pts       = 0.05;
+    // HoldConvergence only: max hold in ms (0 = no time cap; closes at stream
+    // end only if the convergence test never fires).
+    int      hold_max_ms        = 0;
+    // HoldConvergence only: forward the signal-time bid/ask into the closed
+    // trade record (for attribution) — the fill itself is at fill-time quotes.
+    double   hold_exit_markup_pts = 0.0;  // exit-side markup (like fill-side)
+    double   hold_exit_slip_pts   = 0.0;  // exit-side slippage
 };
 
 struct Fill {

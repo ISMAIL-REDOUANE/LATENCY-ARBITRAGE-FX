@@ -46,6 +46,12 @@ static void usage(const char* prog) {
         "  --margin <pts>         min_profit_margin_pips override (default 0.3)\n"
         "  --max-loss <usd>       max_daily_loss override (default 500)\n"
         "  --volume <lots>        quantity override (default 1.0)\n"
+        "  --pnl-model <m>        instant | hold  (default hold: captures the\n"
+        "                         lead->lag catch-up; 'instant' pays the spread)\n"
+        "  --hold-tol <pts>       close held pos when |lag_mid-lead_mid|<=pts\n"
+        "                         (default 0.05)\n"
+        "  --hold-max-ms <ms>     max holding time before forced market close\n"
+        "                         (default 0 = no time cap)\n"
         "  --help                 show this help\n"
         "\n"
         "Binary format: 24-byte llm::BinaryTick from CSV (ts_ms,bid,ask,volume),\n"
@@ -65,6 +71,9 @@ struct CliArgs {
     double      margin     = 0.3;
     double      max_loss   = 500.0;
     double      volume     = 1.0;
+    std::string pnl_model  = "hold";
+    double      hold_tol   = 0.05;
+    int         hold_max_ms = 0;
     bool        ok         = true;
 };
 
@@ -116,6 +125,14 @@ int main(int argc, char** argv) {
         } else if (arg == "--volume") {
             a.volume = std::atof(
                 llm::flag_value(argc, argv, i, "--volume", a).c_str());
+        } else if (arg == "--pnl-model") {
+            a.pnl_model = llm::flag_value(argc, argv, i, "--pnl-model", a);
+        } else if (arg == "--hold-tol") {
+            a.hold_tol = std::atof(
+                llm::flag_value(argc, argv, i, "--hold-tol", a).c_str());
+        } else if (arg == "--hold-max-ms") {
+            a.hold_max_ms = std::atoi(
+                llm::flag_value(argc, argv, i, "--hold-max-ms", a).c_str());
         } else if (arg == "--help" || arg == "-h") {
             llm::usage(argv[0]);
             return 0;
@@ -183,6 +200,11 @@ int main(int argc, char** argv) {
     ep.spread_cap_pts     = 50.0;
     ep.slippage_cap_pts   = 50.0;
     ep.quantity           = a.volume;
+    ep.pnl_model          = (a.pnl_model == "instant")
+                                ? llm::PnlModel::Instant
+                                : llm::PnlModel::HoldConvergence;
+    ep.hold_tol_pts       = a.hold_tol;
+    ep.hold_max_ms        = a.hold_max_ms;
 
     llm::BacktestEngine engine(lead, lag, cfg);
 

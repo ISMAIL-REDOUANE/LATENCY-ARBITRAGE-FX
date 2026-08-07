@@ -325,6 +325,64 @@ static void test_backtest_engine_metrics() {
 }
 
 // ===========================================================================
+// Hold-to-convergence: model must capture the catch-up (positive edge) where
+// the naive instant model always pays the spread.
+// ===========================================================================
+static void test_backtest_hold_captures_catchup() {
+    // Lead is high and flat at 64250; lag drifts upward toward it from 64000.
+    // Strategy emits a Buy (lead >> ask); we hold until the lag mid has
+    // converged to the lead mid, then exit at the lag bid for a profit.
+    std::vector<BinaryTick> lead, lag;
+    for (int i = 0; i < 2000; ++i) {
+        lead.push_back(testutil::mk(i * 10, 64200.0, 64200.0));
+        const double mid = 64000.0 + (i * 0.10);      // walk toward the lead
+        lag.push_back(testutil::mk(i * 10, mid - 0.5, mid + 0.5));
+    }
+
+    const std::string lp = testutil::write_ticks(lead, "hold_lead");
+    const std::string lg = testutil::write_ticks(lag, "hold_lag");
+    C(!lp.empty() && !lg.empty());
+
+    MmapTickReader rlead(lp), rlag(lg);
+    std::string err;
+    const bool opened = rlead.open(&err) && rlag.open(&err);
+    C(opened);
+    if (!opened) {
+        std::remove(lp.c_str());
+        std::remove(lg.c_str());
+        return;
+    }
+
+    const Config cfg = testutil::test_config();
+    BacktestEngine engine(rlead, rlag, cfg);
+
+    ExecutionParams ep;
+    ep.delay_ms         = 0;
+    ep.spread_cap_pts   = 100;
+    ep.slippage_cap_pts = 50;
+    ep.pnl_model        = PnlModel::HoldConvergence;
+    ep.hold_tol_pts     = 2.0;       // a couple of points of the lead
+    ep.hold_max_ms      = 0;
+
+    const BacktestResult r = engine.run(ep);
+    C(r.signals_emitted >= 1);
+    C(r.fills >= 1);
+    // Buy near the bottom, hold while the lag catches up -> net positive.
+    C(r.total_pnl > 0.0);
+    C(r.profit_factor > 1.0);
+
+    // The same data with the instant model must NOT show a positive edge.
+    ExecutionParams ei = ep;
+    ei.pnl_model = PnlModel::Instant;
+    const BacktestResult ri = engine.run(ei);
+    C(ri.total_pnl <= 1e-6);
+
+    rlead.close(); rlag.close();
+    std::remove(lp.c_str());
+    std::remove(lg.c_str());
+}
+
+// ===========================================================================
 int main() {
     std::printf("backtest_tests\n");
     test_tick_layout();
@@ -336,6 +394,7 @@ int main() {
     test_sim_single_slot_order();
     test_sim_commission();
     test_backtest_engine_metrics();
+    test_backtest_hold_captures_catchup();
     std::printf("\n%d checks, %d failures\n", btfw::checks, btfw::failures);
     return btfw::failures == 0 ? 0 : 1;
 }
