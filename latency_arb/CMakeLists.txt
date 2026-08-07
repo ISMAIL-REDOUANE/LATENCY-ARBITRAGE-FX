@@ -76,8 +76,16 @@ add_executable(lead_lag
   src/broker_sub.cpp
   src/execution.cpp
   src/fix_client.cpp
+  src/oanda_executor.cpp
 )
 target_link_libraries(lead_lag PRIVATE llm_core Boost::system)
+
+# Standalone OANDA v2 order probe (test/diagnostics): sends one market order
+# using OANDA_TOKEN/ACCOUNT_ID/HOST/INSTRUMENT env vars, then exits. Useful to
+# smoke-test the executor without the full engine.
+add_executable(oanda_probe src/bin/oanda_probe_main.cpp)
+target_include_directories(oanda_probe PRIVATE include)
+target_link_libraries(oanda_probe PRIVATE llm_core Boost::system)
 
 # Pure C++20 native MT5 execution bridge (no Python).
 add_executable(mt5_bridge

@@ -79,6 +79,14 @@ Config Config::from_env() {
     if ((v = env("FIX_SENDER_COMP_ID"))) c.fix_sender_comp_id = v;
     if ((v = env("FIX_TARGET_COMP_ID"))) c.fix_target_comp_id = v;
     c.fix_enabled  = benv("FIX_ENABLED", c.fix_enabled);
+
+    // ---- OANDA v2 execution ---------------------------------------------- //
+    if ((v = env("OANDA_TOKEN")))       c.oanda_token      = v;
+    if ((v = env("OANDA_ACCOUNT_ID")))  c.oanda_account_id = v;
+    if ((v = env("OANDA_HOST")))        c.oanda_host       = v;
+    if ((v = env("OANDA_INSTRUMENT")))  c.oanda_instrument = v;
+    c.oanda_enabled = benv("OANDA_ENABLED", c.oanda_enabled);
+
     c.dry_run      = benv("DRY_RUN", c.dry_run);
     if ((v = env("DRY_RUN_SYMBOL")))     c.dry_run_symbol = v;
     c.trade_amount = denv("TRADE_AMOUNT", c.trade_amount);

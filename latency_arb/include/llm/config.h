@@ -71,13 +71,21 @@ struct Config {
     std::string broker_zmq_bind     = "tcp://127.0.0.1:5556";  // OmsBroker pub
     std::string broker_topic        = "quote";
 
-    // ---- execution ------------------------------------------------------ //
+// ---- execution ------------------------------------------------------ //
     std::string zmq_pub_bind        = "ipc:///tmp/latency_arb.ipc";
     std::string fix_host            = "127.0.0.1";
     std::string fix_port            = "5200";
     std::string fix_sender_comp_id  = "LEADLAG";
     std::string fix_target_comp_id  = "BROKER";
     bool        fix_enabled         = false;
+
+    // ---- OANDA v2 execution -------------------------------------------- //
+    std::string oanda_token         = "";   // OANDA API bearer token
+    std::string oanda_account_id    = "";   // "/v3/accounts/{id}" segment
+    std::string oanda_host          = "api-fxpractice.oanda.com"; // or -fxtrade
+    std::string oanda_instrument    = "XAU_USD";  // default mapped instrument
+    bool        oanda_enabled       = false;
+
     bool        dry_run             = true;
     std::string dry_run_symbol      = "BTC/USD";
     double      trade_amount        = 0.001;
