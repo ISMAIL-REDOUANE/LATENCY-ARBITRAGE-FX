@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <thread>
@@ -128,6 +129,9 @@ int main() {
     std::signal(SIGTERM, on_signal);
 
     Engine engine(cfg);
+
+    // ---- startup banner (stdout so DRY_RUN is visible without telemetry) - //
+    std::printf("Bot started. DRY_RUN=%d. Waiting for signals...\n", cfg.dry_run ? 1 : 0);
 
     // ---- start the five workers -------------------------------------- //
     // 1) Binance reader (own io_context thread inside start())

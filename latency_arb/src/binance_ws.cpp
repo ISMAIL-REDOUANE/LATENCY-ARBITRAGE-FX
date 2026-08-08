@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 
 #include <boost/asio.hpp>
@@ -94,6 +95,7 @@ private:
 
     void on_ws_handshake(beast::error_code ec) {
         if (ec) return fail(ec, "ws_handshake");
+        std::printf("[binance] connected and streaming...\n");
         Telemetry::instance().log(
             std::string("\"binance\":{\"connected\":\"") +
             owner_.cfg_.binance_path + "\"}");
