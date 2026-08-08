@@ -6,7 +6,7 @@
 namespace llm {
 
 // Source venues.
-enum class Venue : uint8_t { Unknown = 0, Binance, Deribit, Broker };
+enum class Venue : uint8_t { Unknown = 0, Binance, Deribit, Bybit, Broker };
 
 // One aggregated market event. Fixed-layout, trivially copyable so it can
 // travel through lock-free ring buffers and ZeroMQ without serialization

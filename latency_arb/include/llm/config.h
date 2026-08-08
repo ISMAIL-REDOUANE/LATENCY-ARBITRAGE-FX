@@ -32,12 +32,20 @@ struct CompileTime {
 // (mirroring the systemd unit Environment= lines) override it at startup.
 struct Config {
     // ---- feeds --------------------------------------------------------- //
+    std::string fast_feed       = "BINANCE";  // FAST_FEED=BINANCE|BYBIT
     std::string binance_symbol = "btcusdt";
     std::string binance_host   = "stream.binance.com";
     std::string binance_port   = "9443";
     std::string binance_path;                    // "/ws/<sym>@bookTicker"
     std::string deribit_symbol = "BTC";
     std::string deribit_ws     = "wss://www.deribit.com/ws/api/v2";
+
+    // Bybit v5 public spot: orderbook.1.<sym> -> best bid/ask ticker.
+    std::string bybit_symbol   = "BTCUSDT";      // uppercase, spot notation
+    std::string bybit_host     = "stream.bybit.com";
+    std::string bybit_port     = "443";
+    std::string bybit_path     = "/v5/public/spot";
+    std::string bybit_channel  = "orderbook.1";  // depth-1 orderbook stream
 
     // ---- aggregation / weighting ---------------------------------------- //
     // US hours: Deribit 60 / Binance 40. Asian hours: Deribit 40 / Binance 60.

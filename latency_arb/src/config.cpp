@@ -35,11 +35,17 @@ Config Config::from_env() {
     const char* v = nullptr;
 
     // ---- feeds -------------------------------------------------------- //
-    if ((v = env("BINANCE_SYMBOL")))      c.binance_symbol = v;
-    if ((v = env("BINANCE_HOST")))        c.binance_host   = v;
-    if ((v = env("BINANCE_PORT")))        c.binance_port   = v;
-    if ((v = env("DERIBIT_SYMBOL")))      c.deribit_symbol = v;
-    if ((v = env("DERIBIT_WS")))          c.deribit_ws     = v;
+    if ((v = env("FAST_FEED")))       c.fast_feed      = v;
+    if ((v = env("BINANCE_SYMBOL")))  c.binance_symbol = v;
+    if ((v = env("BINANCE_HOST")))    c.binance_host   = v;
+    if ((v = env("BINANCE_PORT")))    c.binance_port   = v;
+    if ((v = env("DERIBIT_SYMBOL")))  c.deribit_symbol = v;
+    if ((v = env("DERIBIT_WS")))      c.deribit_ws     = v;
+    if ((v = env("BYBIT_SYMBOL")))    c.bybit_symbol   = v;
+    if ((v = env("BYBIT_HOST")))      c.bybit_host     = v;
+    if ((v = env("BYBIT_PORT")))      c.bybit_port     = v;
+    if ((v = env("BYBIT_PATH")))      c.bybit_path     = v;
+    if ((v = env("BYBIT_CHANNEL")))   c.bybit_channel  = v;
     c.binance_path = binance_bookticker_path(c.binance_symbol);
 
     // ---- weighting ------------------------------------------------------ //

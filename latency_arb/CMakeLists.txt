@@ -123,6 +123,7 @@ endif()
 add_executable(lead_lag
   src/main.cpp
   src/binance_ws.cpp
+  src/bybit_ws.cpp
   src/deribit_ws.cpp
   src/broker_sub.cpp
   src/execution.cpp

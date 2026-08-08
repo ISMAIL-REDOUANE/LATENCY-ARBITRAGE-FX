@@ -21,6 +21,7 @@ std::string tick_frame(const Tick& t) {
     switch (t.venue) {
         case Venue::Binance: venue = "binance"; break;
         case Venue::Deribit: venue = "deribit"; break;
+        case Venue::Bybit:   venue = "bybit";   break;
         case Venue::Broker:  venue = "broker";  break;
         default: break;
     }

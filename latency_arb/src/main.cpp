@@ -13,6 +13,7 @@
 #include "llm/aggregator.h"
 #include "llm/binance_ws.h"
 #include "llm/broker_sub.h"
+#include "llm/bybit_ws.h"
 #include "llm/config.h"
 #include "llm/deribit_ws.h"
 #include "llm/execution.h"
@@ -48,7 +49,7 @@ int cpu_env(const char* name) {
 }
 
 // 5 dedicated roles, one OS thread each:
-//   1) Binance reader  -> binance_ring   (own io_context thread)
+//   1) Fast feed reader (Binance or Bybit) -> binance_ring
 //   2) Deribit reader  -> deribit_ring   (own io_context thread)
 //   3) Broker reader   -> broker_ring    (ZMQ SUB thread)
 //   4) Math/Strategy   -> consumes all three rings (single consumer)
@@ -61,13 +62,14 @@ struct Engine {
           zmq_pub(cfg.zmq_pub_bind),
           fix(cfg),
           exec(cfg, zmq_pub, fix),
-          binance(cfg, binance_ring),
+          binance(cfg, fast_ring),
+          bybit(cfg, fast_ring),
           deribit(cfg, deribit_ring),
           broker(cfg, broker_ring) {}
 
     const Config& cfg;
 
-    TickRing                     binance_ring;
+    TickRing                     fast_ring;   // Binance or Bybit (FAST_FEED)
     TickRing                     deribit_ring;
     SpscRing<BrokerQuote, 8192>  broker_ring;
 
@@ -78,6 +80,7 @@ struct Engine {
     ExecutionDispatcher exec;
 
     BinanceWs binance;
+    BybitWs   bybit;
     DeribitWs deribit;
     BrokerSub broker;
 };
@@ -88,7 +91,7 @@ void strategy_loop(Engine& e) {
     Telemetry::instance().log("\"thread\":{\"role\":\"strategy\",\"started\":true}");
     while (!g_shutdown.load()) {
         const int64_t now = now_ms();
-        auto lead = e.aggregator.update(e.binance_ring, e.deribit_ring, now);
+        auto lead = e.aggregator.update(e.fast_ring, e.deribit_ring, now);
         if (lead.has_value()) {
             BrokerQuote q;
             if (e.broker_ring.pop(q) && q.is_valid()) {
@@ -131,11 +134,17 @@ int main() {
     Engine engine(cfg);
 
     // ---- startup banner (stdout so DRY_RUN is visible without telemetry) - //
-    std::printf("Bot started. DRY_RUN=%d. Waiting for signals...\n", cfg.dry_run ? 1 : 0);
+    std::printf("Bot started. DRY_RUN=%d. FAST_FEED=%s. Waiting for signals...\n",
+                cfg.dry_run ? 1 : 0, cfg.fast_feed.c_str());
 
     // ---- start the five workers -------------------------------------- //
-    // 1) Binance reader (own io_context thread inside start())
-    engine.binance.start();
+    // 1) Fast feed reader (own io_context thread inside start()); Binance and
+    //    Bybit share `fast_ring`, only the selected one is spun up.
+    if (cfg.fast_feed == "BYBIT") {
+        engine.bybit.start();
+    } else {
+        engine.binance.start();
+    }
     // 2) Deribit reader
     engine.deribit.start();
     // 3) Broker ZMQ subscriber
@@ -159,9 +168,13 @@ int main() {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
     // ---- graceful stop (reverse order) -------------------------------- //
-    engine.binance.stop();
-    engine.deribit.stop();
     engine.broker.stop();
+    engine.deribit.stop();
+    if (cfg.fast_feed == "BYBIT") {
+        engine.bybit.stop();
+    } else {
+        engine.binance.stop();
+    }
     if (t_strategy.joinable()) t_strategy.join();
     engine.exec.stop();
     engine.fix.stop();
