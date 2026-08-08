@@ -73,10 +73,17 @@ struct Config {
 
 // ---- execution ------------------------------------------------------ //
     std::string zmq_pub_bind        = "ipc:///tmp/latency_arb.ipc";
-    std::string fix_host            = "127.0.0.1";
-    std::string fix_port            = "5200";
-    std::string fix_sender_comp_id  = "LEADLAG";
-    std::string fix_target_comp_id  = "BROKER";
+
+    // ---- FIX 4.4 execution (IC Markets cTrader gateway) ---------------- //
+    // cTrader FIX runs over plain TCP + SSL — no MT5 / REST needed. The demo
+    // endpoint is demo-uk-eqx-01.p.c-trader.com:5211 (TargetCompID=cServer).
+    std::string fix_host            = "demo-uk-eqx-01.p.c-trader.com";
+    std::string fix_port            = "5211";
+    std::string fix_sender_comp_id  = "demo.icmarkets.10092442"; // SenderCompID
+    std::string fix_target_comp_id  = "cServer";                 // TargetCompID
+    std::string fix_password        = "";                        // Tag 554 (FIX_PASSWORD)
+    std::string fix_account_id      = "";                        // Tag 1 / env FIX_ACCOUNT_ID
+    long        fix_heartbeat_s     = CompileTime::kFIXHeartbeatS; // 30 s
     bool        fix_enabled         = false;
 
     // ---- OANDA v2 execution -------------------------------------------- //

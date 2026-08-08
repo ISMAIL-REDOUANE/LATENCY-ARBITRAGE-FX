@@ -93,6 +93,7 @@ add_library(llm_core
   src/telemetry.cpp
   src/wire.cpp
   src/oanda_executor.cpp
+  src/fix_executor.cpp
   src/ctrader_executor.cpp
   ${OPENAPI_GEN_SRC}
 )
@@ -141,6 +142,13 @@ target_link_libraries(oanda_probe PRIVATE llm_core Boost::system)
 add_executable(ctrader_probe src/bin/ctrader_probe_main.cpp)
 target_include_directories(ctrader_probe PRIVATE include)
 target_link_libraries(ctrader_probe PRIVATE llm_core Boost::system)
+
+# Standalone IC Markets cTrader FIX 4.4 probe (diagnostics): one NewOrder
+# Single (35=D) over the FIX_HOST/FIX_PORT/FIX_PASSWORD/FIX_ACCOUNT_ID env
+# vars, verifying the TLS session + ExecutionReport round-trip.
+add_executable(fix_probe src/bin/fix_probe_main.cpp)
+target_include_directories(fix_probe PRIVATE include)
+target_link_libraries(fix_probe PRIVATE llm_core Boost::system)
 
 # Pure C++20 native MT5 execution bridge (no Python).
 add_executable(mt5_bridge
@@ -211,3 +219,4 @@ install(TARGETS lead_lag mt5_bridge RUNTIME DESTINATION bin)
 install(TARGETS tick_replay RUNTIME DESTINATION bin)
 install(TARGETS oanda_probe RUNTIME DESTINATION bin)
 install(TARGETS ctrader_probe RUNTIME DESTINATION bin)
+install(TARGETS fix_probe RUNTIME DESTINATION bin)

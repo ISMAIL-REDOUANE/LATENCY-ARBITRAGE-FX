@@ -78,7 +78,10 @@ Config Config::from_env() {
     if ((v = env("FIX_PORT")))           c.fix_port       = v;
     if ((v = env("FIX_SENDER_COMP_ID"))) c.fix_sender_comp_id = v;
     if ((v = env("FIX_TARGET_COMP_ID"))) c.fix_target_comp_id = v;
-    c.fix_enabled  = benv("FIX_ENABLED", c.fix_enabled);
+    if ((v = env("FIX_PASSWORD")))       c.fix_password   = v;
+    if ((v = env("FIX_ACCOUNT_ID")))     c.fix_account_id = v;
+    if ((v = env("FIX_HEARTBEAT_S")))    c.fix_heartbeat_s = std::atol(v);
+    c.fix_enabled = benv("FIX_ENABLED", c.fix_enabled);
 
     // ---- OANDA v2 execution ---------------------------------------------- //
     if ((v = env("OANDA_TOKEN")))       c.oanda_token      = v;
