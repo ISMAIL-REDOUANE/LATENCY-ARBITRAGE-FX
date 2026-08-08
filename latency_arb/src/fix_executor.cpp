@@ -533,8 +533,8 @@ std::string FixExecutor::build_logon() {
     std::string b;
     fix_field(b, 98, "0");                               // EncryptMethod = none
     fix_field(b, 108, static_cast<long>(cfg_.fix_heartbeat_s > 0
-                                           ? cfg_.fix_heartbeat_s : 30));  // HeartBtInt
-    fix_field(b, 141, "1");                               // ResetSeqNum
+                                           ? cfg_.fix_heartbeat_s : 30));  // HeartBtInt (int)
+    fix_field(b, 141, "Y");                               // ResetSeqNum (FIX boolean = Y/N)
     fix_field(b, 553, cfg_.fix_account_id);               // Username = numeric login (e.g. 10092442)
     fix_field(b, 554, cfg_.fix_password);                 // Password (raw)
     // NOTE: tag 1 (Account) is NOT allowed on the cTrader Logon — the gateway
