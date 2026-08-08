@@ -72,9 +72,9 @@ foreach(_proto ${OPENAPI_PROTO_FILES})
     OUTPUT "${_gen_cc}" "${_gen_h}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${OPENAPI_GEN_DIR}"
     COMMAND protobuf::protoc
-      --proto_path="${OPENAPI_PROTO_DIR}"
-      --cpp_out="${OPENAPI_GEN_DIR}"
-      "${_proto}"
+      --proto_path=${OPENAPI_PROTO_DIR}
+      --cpp_out=${OPENAPI_GEN_DIR}
+      ${_proto}
     DEPENDS "${_proto}"
     COMMENT "protoc ${_base}.proto"
     VERBATIM
