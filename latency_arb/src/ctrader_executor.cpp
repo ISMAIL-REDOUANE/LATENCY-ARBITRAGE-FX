@@ -40,7 +40,7 @@ using google::protobuf::Reflection;
 
 namespace asio = boost::asio;
 using tcp  = asio::ip::tcp;
-using ssl  = asio::ssl;
+namespace ssl = asio::ssl;
 using SslStream = asio::ssl::stream<boost::asio::ip::tcp::socket>;
 
 // ---- official ProtoOAPayloadType values (OpenApiModelMessages.proto) -----
