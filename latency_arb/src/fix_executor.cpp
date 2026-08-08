@@ -535,9 +535,11 @@ std::string FixExecutor::build_logon() {
     fix_field(b, 108, static_cast<long>(cfg_.fix_heartbeat_s > 0
                                            ? cfg_.fix_heartbeat_s : 30));  // HeartBtInt
     fix_field(b, 141, "1");                               // ResetSeqNum
-    fix_field(b, 553, cfg_.fix_sender_comp_id);           // Username (SenderCompID)
+    fix_field(b, 553, cfg_.fix_account_id);               // Username = numeric login (e.g. 10092442)
     fix_field(b, 554, cfg_.fix_password);                 // Password (raw)
-    fix_field(b, 1, cfg_.fix_account_id);                 // Account id
+    // NOTE: tag 1 (Account) is NOT allowed on the cTrader Logon — the gateway
+    // rejects a session with "Invalid tag number, field=1". Account goes only
+    // in the NewOrderSingle body (see build_order).
     return build_msg('A', b);                            // 35=A
 }
 
